@@ -10,6 +10,12 @@ def root():
         "host": "testing.swapgate-store.com"
     }
 
+@app.get("/version")
+def verstion():
+    return{
+        "this is CICD effect"
+    }
+
 @app.get("/health")
 def health():
     return {"health": "ok"}
