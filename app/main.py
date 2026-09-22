@@ -1,40 +1,70 @@
+from contextlib import asynccontextmanager
 from fastapi import FastAPI
 from pydantic import BaseModel
+import torch
+from transformers import AutoModelForCausalLM, AutoTokenizer
 
-app = FastAPI(title="Testing API")
+model_name = "HuggingFaceTB/SmolLM-135M-Instruct"
+ml_models = {}
 
-# Request Body එකට අදාළ Schema එක
-class ItemData(BaseModel):
-    name: str
-    price: float
-    description: str | None = None
+@asynccontextmanager
+async def lifespan(app: FastAPI):
+    # Server start වෙද්දී Model එක load වීම
+    print("Loading AI Model into memory...")
+    tokenizer = AutoTokenizer.from_pretrained(model_name)
+    model = AutoModelForCausalLM.from_pretrained(
+        model_name,
+        torch_dtype=torch.float32,
+        low_cpu_mem_usage=True
+    )
+    ml_models["tokenizer"] = tokenizer
+    ml_models["model"] = model
+    print("Model loaded successfully!")
+    yield
+    # Server shutdown වෙද්දී clean up වීම
+    ml_models.clear()
+
+app = FastAPI(title="FastAPI AI Service", lifespan=lifespan)
+
+class PromptRequest(BaseModel):
+    prompt: str
+    max_tokens: int = 50
+    temperature: float = 0.7
 
 @app.get("/")
 def root():
     return {
-        "status": "success",
-        "message": "FastAPI CI/CD pipeline working perfectly!",
-        "host": "testing.swapgate-store.com"
+        "status": "online",
+        "model": model_name,
+        "message": "AI Inference API is running on KVM 2 VPS"
     }
 
-@app.get("/health")
-def health():
-    return {"health": "ok"}
+@app.post("/generate")
+def generate_text(req: PromptRequest):
+    tokenizer = ml_models["tokenizer"]
+    model = ml_models["model"]
 
-# අලුත් POST endpoint එක:
-# 1. item_id -> Path Parameter (URL එකේ එන අගය: /items/10)
-# 2. category -> Query Parameter (URL එකේ ?category=electronics විදිහට)
-# 3. item -> Request Body (JSON Data)
-@app.post("/items/{item_id}")
-def create_or_update_item(item_id: int, category: str, item: ItemData):
+    # Chat format එකට prompt එක සකස් කිරීම
+    messages = [{"role": "user", "content": req.prompt}]
+    formatted_prompt = tokenizer.apply_chat_template(messages, tokenize=False)
+
+    inputs = tokenizer(formatted_prompt, return_tensors="pt")
+    
+    with torch.no_grad():
+        outputs = model.generate(
+            **inputs,
+            max_new_tokens=req.max_tokens,
+            temperature=req.temperature,
+            do_sample=True,
+            pad_token_id=tokenizer.eos_token_id
+        )
+
+    # Output text එක decode කිරීම (Prompt එක අයින් කර model response එක පමණක් ගැනීම)
+    input_len = inputs["input_ids"].shape[1]
+    generated_tokens = outputs[0][input_len:]
+    response_text = tokenizer.decode(generated_tokens, skip_special_tokens=True)
+
     return {
-        "status": "created",
-        "received_path_param": {"item_id": item_id},
-        "received_query_param": {"category": category},
-        "received_body": {
-            "name": item.name,
-            "price": item.price,
-            "description": item.description
-        },
-        "message": f"Item {item_id} in {category} created successfully!"
+        "prompt": req.prompt,
+        "response": response_text.strip()
     }
