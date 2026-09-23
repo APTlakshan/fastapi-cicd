@@ -38,6 +38,9 @@ def root():
         "model": model_name,
         "message": "AI Inference API is running on KVM 2 VPS"
     }
+@app.get("/health")
+def health_check():
+    return {"status": "healthy"}
 
 @app.post("/generate")
 def generate_text(req: PromptRequest):
