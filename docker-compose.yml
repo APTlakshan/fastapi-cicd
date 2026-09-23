@@ -1,5 +1,7 @@
+version: '3.8'
+
 services:
-  api:
+  fastapi_app:
     build: .
     container_name: fastapi_app
     restart: always
@@ -7,3 +9,36 @@ services:
       - "127.0.0.1:8000:8000"
     environment:
       - ENVIRONMENT=production
+    networks:
+      - monitoring_net
+
+  prometheus:
+    image: prom/prometheus:latest
+    container_name: prometheus
+    restart: always
+    volumes:
+      - ./monitoring/prometheus.yml:/etc/prometheus/prometheus.yml
+    ports:
+      - "9090:9090"
+    networks:
+      - monitoring_net
+    depends_on:
+      - fastapi_app
+
+  grafana:
+    image: grafana/grafana:latest
+    container_name: grafana
+    restart: always
+    ports:
+      - "3000:3000"
+    environment:
+      - GF_SECURITY_ADMIN_USER=admin
+      - GF_SECURITY_ADMIN_PASSWORD=admin
+    networks:
+      - monitoring_net
+    depends_on:
+      - prometheus
+
+networks:
+  monitoring_net:
+    driver: bridge

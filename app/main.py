@@ -3,7 +3,7 @@ from fastapi import FastAPI
 from pydantic import BaseModel
 import torch
 from transformers import AutoModelForCausalLM, AutoTokenizer
-
+from prometheus_fastapi_instrumentator import Instrumentator
 model_name = "HuggingFaceTB/SmolLM-135M-Instruct"
 ml_models = {}
 
@@ -25,7 +25,7 @@ async def lifespan(app: FastAPI):
     ml_models.clear()
 
 app = FastAPI(title="FastAPI AI Service", lifespan=lifespan)
-
+Instrumentator().instrument(app).expose(app)
 class PromptRequest(BaseModel):
     prompt: str
     max_tokens: int = 50
